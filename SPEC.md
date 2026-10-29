@@ -36,7 +36,7 @@
 | Runtime | .NET 10, C# 14 |
 | API style | Minimal APIs (primary) + Controllers (comparison in Level 1) |
 | ORM | EF Core 10 (+ Dapper for hot read paths) |
-| Database | PostgreSQL (or SQL Server); Redis for cache |
+| Database | SQL Server 2022; Redis for cache |
 | Auth | ASP.NET Core Identity, JWT, passkeys, policy-based authorization |
 | Validation | FluentValidation |
 | Mapping | Mapperly |
@@ -96,71 +96,71 @@
 
 ## 4. Database Schema
 
-> Types use PostgreSQL naming. All tables include `TenantId` unless noted. "Audit columns" means `CreatedAt`, `CreatedBy`, `UpdatedAt`, `UpdatedBy`, `RowVersion`.
+> Types use SQL Server naming. All tables include `TenantId` unless noted. "Audit columns" means `CreatedAt`, `CreatedBy`, `UpdatedAt`, `UpdatedBy`, `RowVersion`.
 
 ### 4.1 Catalog
 
 **Tenants**
 | Column | Type | Notes |
 |---|---|---|
-| Id | uuid | PK |
-| Name | varchar(200) | |
-| Slug | varchar(100) | unique |
-| IsActive | bool | |
-| CreatedAt | timestamptz | |
+| Id | uniqueidentifier | PK |
+| Name | nvarchar(200) | |
+| Slug | nvarchar(100) | unique |
+| IsActive | bit | |
+| CreatedAt | datetimeoffset | |
 
 **Categories**
 | Column | Type | Notes |
 |---|---|---|
-| Id | uuid | PK |
-| TenantId | uuid | FK, indexed |
-| ParentId | uuid? | self FK |
-| Name | varchar(200) | |
-| Path | varchar(500) | materialized path, for example `/1/4/9/` |
+| Id | uniqueidentifier | PK |
+| TenantId | uniqueidentifier | FK, indexed |
+| ParentId | uniqueidentifier? | self FK |
+| Name | nvarchar(200) | |
+| Path | nvarchar(500) | materialized path, for example `/1/4/9/` |
 | Audit columns | | |
 
 **Brands**
 | Column | Type | Notes |
 |---|---|---|
-| Id | uuid | PK |
-| TenantId | uuid | |
-| Name | varchar(200) | unique per tenant |
+| Id | uniqueidentifier | PK |
+| TenantId | uniqueidentifier | |
+| Name | nvarchar(200) | unique per tenant |
 
 **Products**
 | Column | Type | Notes |
 |---|---|---|
-| Id | uuid | PK |
-| TenantId | uuid | |
-| Sku | varchar(64) | unique per tenant |
-| Name | varchar(300) | |
-| Description | text | |
-| CategoryId | uuid | FK |
-| BrandId | uuid? | FK |
-| Price | numeric(18,2) | |
+| Id | uniqueidentifier | PK |
+| TenantId | uniqueidentifier | |
+| Sku | nvarchar(64) | unique per tenant |
+| Name | nvarchar(300) | |
+| Description | nvarchar(max) | |
+| CategoryId | uniqueidentifier | FK |
+| BrandId | uniqueidentifier? | FK |
+| Price | decimal(18,2) | |
 | Currency | char(3) | |
 | StockQuantity | int | |
 | Status | smallint | Draft, Active, Discontinued |
-| Attributes | jsonb | JSON column (EF Core 10) |
+| Attributes | json | JSON column (EF Core 10) |
 | Embedding | vector(1536)? | bonus AI feature |
-| IsDeleted / DeletedAt | bool / timestamptz? | soft delete via named query filter |
+| IsDeleted / DeletedAt | bit / datetimeoffset? | soft delete via named query filter |
 | Audit columns | | |
 
-Indexes: `(TenantId, Sku)` unique, `(TenantId, CategoryId, Status)`, GIN on `Attributes`, trigram or full-text on `Name`.
+Indexes: `(TenantId, Sku)` unique, `(TenantId, CategoryId, Status)`, JSON index or computed column on frequently queried `Attributes` paths, full-text index on `Name`.
 
 ### 4.2 Associations
 
 **Associations**
 | Column | Type | Notes |
 |---|---|---|
-| Id | uuid | PK |
-| TenantId | uuid | |
-| SourceProductId | uuid | FK |
-| TargetProductId | uuid | FK |
+| Id | uniqueidentifier | PK |
+| TenantId | uniqueidentifier | |
+| SourceProductId | uniqueidentifier | FK |
+| TargetProductId | uniqueidentifier | FK |
 | Type | smallint | enum |
-| Score | numeric(5,4) | 0 to 1 |
+| Score | decimal(5,4) | 0 to 1 |
 | Source | smallint | Manual, Rule, Computed |
-| ValidFrom | timestamptz | |
-| ValidTo | timestamptz? | |
+| ValidFrom | datetimeoffset | |
+| ValidTo | datetimeoffset? | |
 | Priority | int | manual ordering |
 | Audit columns | | |
 
@@ -170,41 +170,41 @@ Indexes: `(TenantId, SourceProductId, Type, Score DESC)` with `INCLUDE (TargetPr
 **AssociationRules**
 | Column | Type | Notes |
 |---|---|---|
-| Id | uuid | PK |
-| TenantId | uuid | |
-| Name | varchar(200) | |
-| SourceCategoryId | uuid? | |
-| TargetCategoryId | uuid? | |
-| Condition | jsonb | for example `{"minPrice":100,"brandId":"..."}` |
+| Id | uniqueidentifier | PK |
+| TenantId | uniqueidentifier | |
+| Name | nvarchar(200) | |
+| SourceCategoryId | uniqueidentifier? | |
+| TargetCategoryId | uniqueidentifier? | |
+| Condition | json | for example `{"minPrice":100,"brandId":"..."}` |
 | AssociationType | smallint | |
-| DefaultScore | numeric(5,4) | |
-| IsEnabled | bool | |
+| DefaultScore | decimal(5,4) | |
+| IsEnabled | bit | |
 | Audit columns | | |
 
 **AssociationScores** (output of the scoring job)
 | Column | Type | Notes |
 |---|---|---|
 | Id | bigint | PK |
-| TenantId | uuid | |
-| SourceProductId | uuid | |
-| TargetProductId | uuid | |
-| Support | numeric(8,6) | |
-| Confidence | numeric(8,6) | |
-| Lift | numeric(10,4) | |
+| TenantId | uniqueidentifier | |
+| SourceProductId | uniqueidentifier | |
+| TargetProductId | uniqueidentifier | |
+| Support | decimal(8,6) | |
+| Confidence | decimal(8,6) | |
+| Lift | decimal(10,4) | |
 | CoOccurrenceCount | int | |
-| ComputedAt | timestamptz | |
-| RunId | uuid | FK to `ScoringRuns` |
+| ComputedAt | datetimeoffset | |
+| RunId | uniqueidentifier | FK to `ScoringRuns` |
 
 **ScoringRuns**
 | Column | Type | Notes |
 |---|---|---|
-| Id | uuid | PK |
-| TenantId | uuid | |
-| StartedAt / FinishedAt | timestamptz | |
+| Id | uniqueidentifier | PK |
+| TenantId | uniqueidentifier | |
+| StartedAt / FinishedAt | datetimeoffset | |
 | Status | smallint | Running, Succeeded, Failed |
 | OrdersProcessed | int | |
 | PairsWritten | int | |
-| Error | text? | |
+| Error | nvarchar(max)? | |
 
 **Bundles** and **BundleItems**
 | Table | Columns |
@@ -217,32 +217,32 @@ Indexes: `(TenantId, SourceProductId, Type, Score DESC)` with `INCLUDE (TargetPr
 **Customers**
 | Column | Type | Notes |
 |---|---|---|
-| Id | uuid | PK |
-| TenantId | uuid | |
-| ExternalRef | varchar(100) | unique per tenant |
-| Email | varchar(256) | PII, encrypted or hashed |
-| FullName | varchar(200) | PII |
-| Address | jsonb | complex type |
-| AnonymizedAt | timestamptz? | GDPR |
+| Id | uniqueidentifier | PK |
+| TenantId | uniqueidentifier | |
+| ExternalRef | nvarchar(100) | unique per tenant |
+| Email | nvarchar(256) | PII, encrypted or hashed |
+| FullName | nvarchar(200) | PII |
+| Address | json | complex type |
+| AnonymizedAt | datetimeoffset? | GDPR |
 
 **Orders**
 | Column | Type | Notes |
 |---|---|---|
-| Id | uuid | PK |
-| TenantId | uuid | |
-| CustomerId | uuid | FK |
-| OrderDate | timestamptz | indexed, range-partition candidate |
+| Id | uniqueidentifier | PK |
+| TenantId | uniqueidentifier | |
+| CustomerId | uniqueidentifier | FK |
+| OrderDate | datetimeoffset | indexed, range-partition candidate |
 | Status | smallint | |
-| TotalAmount | numeric(18,2) | |
+| TotalAmount | decimal(18,2) | |
 
 **OrderItems**
 | Column | Type | Notes |
 |---|---|---|
 | Id | bigint | PK |
-| OrderId | uuid | FK, indexed |
-| ProductId | uuid | FK, indexed |
+| OrderId | uniqueidentifier | FK, indexed |
+| ProductId | uniqueidentifier | FK, indexed |
 | Quantity | int | |
-| UnitPrice | numeric(18,2) | |
+| UnitPrice | decimal(18,2) | |
 
 ### 4.4 Tracking and analytics
 
@@ -250,12 +250,12 @@ Indexes: `(TenantId, SourceProductId, Type, Score DESC)` with `INCLUDE (TargetPr
 | Column | Type | Notes |
 |---|---|---|
 | Id | bigint | PK |
-| TenantId | uuid | |
-| SessionId | varchar(100) | |
-| SourceProductId | uuid | |
-| RecommendedProductId | uuid | |
+| TenantId | uniqueidentifier | |
+| SessionId | nvarchar(100) | |
+| SourceProductId | uniqueidentifier | |
+| RecommendedProductId | uniqueidentifier | |
 | EventType | smallint | Impression, Click, AddToCart, Purchase |
-| OccurredAt | timestamptz | partitioned by month |
+| OccurredAt | datetimeoffset | partitioned by month |
 
 ### 4.5 Identity and security
 
@@ -269,11 +269,11 @@ Indexes: `(TenantId, SourceProductId, Type, Score DESC)` with `INCLUDE (TargetPr
 
 | Table | Purpose |
 |---|---|
-| OutboxMessages | Id, Type, Payload (jsonb), OccurredAt, ProcessedAt, Attempts, Error |
+| OutboxMessages | Id, Type, Payload (json), OccurredAt, ProcessedAt, Attempts, Error |
 | InboxMessages | MessageId, Consumer, ProcessedAt (idempotent consumers) |
 | IdempotencyKeys | Key, RequestHash, ResponseStatus, ResponseBody, CreatedAt, ExpiresAt |
-| AuditLogs | Id, TenantId, UserId, EntityName, EntityId, Action, OldValues (jsonb), NewValues (jsonb), OccurredAt, CorrelationId |
-| FeatureFlags | Key, TenantId?, IsEnabled, Rules (jsonb) |
+| AuditLogs | Id, TenantId, UserId, EntityName, EntityId, Action, OldValues (json), NewValues (json), OccurredAt, CorrelationId |
+| FeatureFlags | Key, TenantId?, IsEnabled, Rules (json) |
 | ImportJobs | Id, FileName, Status, TotalRows, FailedRows, ErrorReportPath, CreatedBy |
 
 ### 4.7 ER overview
@@ -282,13 +282,30 @@ Indexes: `(TenantId, SourceProductId, Type, Score DESC)` with `INCLUDE (TargetPr
 Tenant 1---* Category 1---* Product *---1 Brand
 Product 1---* Association (as Source)
 Product 1---* Association (as Target)
-Product 1---* ProductAttribute (jsonb)
+Product 1---* ProductAttribute (json)
 Customer 1---* Order 1---* OrderItem *---1 Product
 Product *---* Bundle (via BundleItem)
 Association *---1 AssociationRule (optional origin)
 ScoringRun 1---* AssociationScore
 Product 1---* RecommendationEvent
 ```
+
+### 4.8 SQL Server specific notes
+
+| Topic | Guidance |
+|---|---|
+| Docker image | `mcr.microsoft.com/mssql/server:2025-latest` (or `2022-latest`) in `docker-compose.yml` |
+| EF provider | `Microsoft.EntityFrameworkCore.SqlServer` |
+| JSON columns | SQL Server 2025 / Azure SQL have a native `json` type that EF Core 10 maps to. On 2022 or older, use `nvarchar(max)` with EF's JSON mapping |
+| Vectors (bonus) | Native `vector` type and EF Core 10 vector search need SQL Server 2025 or Azure SQL. Skip on 2022 |
+| Concurrency | Use the native `rowversion` column (`[Timestamp]` / `IsRowVersion()`) |
+| Strings | `nvarchar` for Unicode; add `Collation` deliberately (case-insensitive by default) |
+| Indexes | Covering indexes with `INCLUDE`, filtered indexes, and columnstore indexes for `OrderItems` analytics |
+| Recursive queries | `WITH cte AS (...)` without the `RECURSIVE` keyword; set `OPTION (MAXRECURSION n)` |
+| Bulk loading | `SqlBulkCopy` for millions of rows; `MERGE` or staging table + `UPDATE` for upserts |
+| Partitioning | Partition function + scheme on `Orders.OrderDate` and `RecommendationEvents.OccurredAt` |
+| Tuning tools | SSMS actual execution plan, Query Store, `SET STATISTICS IO ON`, missing-index DMVs |
+| Identity | `Guid.CreateVersion7()` (.NET 9+) gives sequential GUIDs and avoids clustered index fragmentation |
 
 ---
 
@@ -538,7 +555,7 @@ Base URL: `/api/v{version}`. All responses use JSON; errors use RFC 9457 `Proble
 | # | Feature | Technique |
 |---|---|---|
 | 1 | Frequently bought together | Self-join on `OrderItems`, group by pair, filter by support |
-| 2 | Market-basket metrics | Support, confidence, lift computed in the Worker (raw SQL + batch upsert) |
+| 2 | Market-basket metrics | Support, confidence, lift computed in the Worker (raw SQL + `MERGE`/batch upsert) |
 | 3 | Top-N per product | `GroupBy` + ordered `Take`, then window function `ROW_NUMBER()` in SQL |
 | 4 | Orphan products | EF Core 10 `LeftJoin` |
 | 5 | All-expired associations | Correlated `Any()` / `All()` |
@@ -548,7 +565,7 @@ Base URL: `/api/v{version}`. All responses use JSON; errors use RFC 9457 `Proble
 | 9 | Personalized recommendations | Customer history, then associations, then exclude already purchased, then rank |
 | 10 | Recommendation ranking | Blend of score, priority, stock, margin, and recency, configurable |
 | 11 | Hot path reads | Compiled queries + HybridCache with tag invalidation |
-| 12 | Bulk maintenance | `ExecuteUpdate` / `ExecuteDelete`, batch `COPY`/bulk insert |
+| 12 | Bulk maintenance | `ExecuteUpdate` / `ExecuteDelete`, `SqlBulkCopy` batch insert |
 
 ---
 
@@ -578,7 +595,7 @@ Legend: `[ ]` to do. Estimates are for one developer learning as they go.
 - [ ] 0.3 Create `ProductLink.slnx` and the first project
 - [ ] 0.4 Add `Directory.Build.props` (nullable, warnings as errors, analyzers)
 - [ ] 0.5 Add `Directory.Packages.props` (central package management)
-- [ ] 0.6 `docker-compose.yml` with PostgreSQL and Redis
+- [ ] 0.6 `docker-compose.yml` with SQL Server and Redis
 - [ ] 0.7 Create `docs/adr/0001-record-architecture-decisions.md`
 - [ ] 0.8 Configure Git branching and tagging convention
 
@@ -589,7 +606,7 @@ Legend: `[ ]` to do. Estimates are for one developer learning as they go.
 - [ ] 1.2 Use C# 14 features where natural (`field` keyword, extension members, null-conditional assignment)
 - [ ] 1.3 `AppDbContext` and Fluent API configurations (`IEntityTypeConfiguration`)
 - [ ] 1.4 Value converters, enum-to-string, decimal precision
-- [ ] 1.5 Initial migration, apply to PostgreSQL
+- [ ] 1.5 Initial migration, apply to SQL Server
 - [ ] 1.6 Seed data (categories, brands, 200 products, 500 associations)
 
 **API**
@@ -768,7 +785,7 @@ Total: roughly 4 to 5 months part-time.
 
 | Purpose | Package |
 |---|---|
-| EF Core | `Microsoft.EntityFrameworkCore`, `Npgsql.EntityFrameworkCore.PostgreSQL` |
+| EF Core | `Microsoft.EntityFrameworkCore`, `Microsoft.EntityFrameworkCore.SqlServer` |
 | Validation | `FluentValidation.DependencyInjectionExtensions` |
 | Mapping | `Riok.Mapperly` |
 | OpenAPI | `Microsoft.AspNetCore.OpenApi`, `Scalar.AspNetCore` |
@@ -781,7 +798,7 @@ Total: roughly 4 to 5 months part-time.
 | Telemetry | `OpenTelemetry.Extensions.Hosting`, `OpenTelemetry.Instrumentation.*` |
 | Feature flags | `Microsoft.FeatureManagement.AspNetCore` |
 | AI | `Microsoft.Extensions.AI` |
-| Testing | `xunit`, `NSubstitute`, `Testcontainers.PostgreSql`, `Microsoft.AspNetCore.Mvc.Testing`, `NetArchTest.Rules`, `BenchmarkDotNet`, `NBomber` |
+| Testing | `xunit`, `NSubstitute`, `Testcontainers.MsSql`, `Microsoft.AspNetCore.Mvc.Testing`, `NetArchTest.Rules`, `BenchmarkDotNet`, `NBomber` |
 | Bulk and raw SQL | `Dapper`, `EFCore.BulkExtensions` (optional) |
 
 ## Appendix B: Naming and conventions
