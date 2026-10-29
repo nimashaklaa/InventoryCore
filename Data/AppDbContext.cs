@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
-using MyProject.Models;
+using InventoryCore.Models;
 
-namespace MyProject.Data
+namespace InventoryCore.Data
 {
     public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
     {

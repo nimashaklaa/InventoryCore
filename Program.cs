@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using MyProject.Data;
+using InventoryCore.Data;
 using Serilog;
 
 Log.Logger = new LoggerConfiguration()

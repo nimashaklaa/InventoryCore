@@ -1,4 +1,4 @@
-namespace MyProject.DTOs
+namespace InventoryCore.DTOs
 {
     public class ProductDto
     {
