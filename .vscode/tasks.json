@@ -1,0 +1,62 @@
+{
+  "version": "2.0.0",
+  "inputs": [
+    {
+      "id": "migrationName",
+      "type": "promptString",
+      "description": "Migration name"
+    }
+  ],
+  "tasks": [
+    {
+      "label": "dotnet: run",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["run"],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "dotnet: watch",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["watch", "run"],
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "custom",
+        "pattern": {
+          "regexp": "^$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "Now listening on:"
+        }
+      }
+    },
+    {
+      "label": "dotnet: build",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["build"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "ef: add migration",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["ef", "migrations", "add", "${input:migrationName}"],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "ef: update database",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["ef", "database", "update"],
+      "problemMatcher": "$msCompile"
+    }
+  ]
+}
